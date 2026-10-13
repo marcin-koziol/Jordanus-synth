@@ -67,6 +67,9 @@ struct PanelBox { float x, y, w, h; const char* title; };
 // MIDI learn button, cut into a panel's top frame line (target: 1 = harmonics, 2 = sub)
 struct LearnButton { int target; float x, y, w, h; };
 
+// one segment of a radio-style switch bound to an integer parameter
+struct SwitchButton { uint32_t param; float value; float x, y, w, h; const char* label; };
+
 // a plain clickable button, not tied to a DPF parameter (preset bar)
 struct Button { float x, y, w, h; const char* label; };
 
@@ -86,6 +89,7 @@ struct Layout
     std::vector<PanelBox> panels;
     std::vector<Knob> knobs;
     std::vector<LearnButton> learnButtons;
+    std::vector<SwitchButton> switches;
     PresetBarLayout presetBar;
 };
 
@@ -164,17 +168,25 @@ inline Layout buildLayout(float width)
                      { kParamVoices, "VOICES" }, { kParamSpread, "SPREAD" }, { kParamSubShape, "SUB WAVE" } });
     }
 
-    // --- row 3: TONE | PITCH | AMP, widths proportional to knob count (3/2/5) ---
+    // --- row 3: TONE | PITCH | AMP, widths proportional to knob count (3/3/5;
+    // PITCH's first slot is the MONO/POLY switch) ---
     const float row2Y = waveY + panelH + gap + 6.0f;
-    const float slotW = (width - 2.0f * margin - 2.0f * gap) / 10.0f;
-    const float toneX = margin, pitchX = toneX + 3.0f * slotW + gap, ampX = pitchX + 2.0f * slotW + gap;
+    const float slotW = (width - 2.0f * margin - 2.0f * gap) / 11.0f;
+    const float toneX = margin, pitchX = toneX + 3.0f * slotW + gap, ampX = pitchX + 3.0f * slotW + gap;
     L.panels.push_back({ toneX,  row2Y, 3.0f * slotW, panelH, "TONE" });
-    L.panels.push_back({ pitchX, row2Y, 2.0f * slotW, panelH, "PITCH" });
+    L.panels.push_back({ pitchX, row2Y, 3.0f * slotW, panelH, "PITCH" });
     L.panels.push_back({ ampX,   row2Y, 5.0f * slotW, panelH, "AMP" });
     addKnobRow(L.knobs, toneX, 3.0f * slotW, row2Y + knobY, radius,
                { { kParamDrive, "DRIVE" }, { kParamAsym, "ASYM" }, { kParamCab, "CABINET" } });
-    addKnobRow(L.knobs, pitchX, 2.0f * slotW, row2Y + knobY, radius,
-               { { kParamBendRange, "BEND" }, { kParamGlide, "GLIDE" } });
+    {
+        // MONO above POLY, stacked in the first slot, LED left of each
+        const float bw = 46.0f, bh = 20.0f;
+        const float bx = pitchX + (slotW - bw) * 0.5f + 6.0f;
+        L.switches.push_back({ kParamVoiceMode, 0.0f, bx, row2Y + knobY - bh - 3.0f, bw, bh, "MONO" });
+        L.switches.push_back({ kParamVoiceMode, 1.0f, bx, row2Y + knobY + 3.0f,      bw, bh, "POLY" });
+        addKnobRow(L.knobs, pitchX + slotW, 2.0f * slotW, row2Y + knobY, radius,
+                   { { kParamBendRange, "BEND" }, { kParamGlide, "GLIDE" } });
+    }
     addKnobRow(L.knobs, ampX, 5.0f * slotW, row2Y + knobY, radius,
                { { kParamAttack, "ATTACK" }, { kParamDecay, "DECAY" }, { kParamSustain, "SUSTAIN" },
                  { kParamRelease, "RELEASE" }, { kParamVolume, "VOLUME" } });
@@ -374,6 +386,7 @@ struct PaintState
     int hoverKnob = -1;
     int dragKnob = -1;
     int hoverLearn = -1;
+    int hoverSwitch = -1;
     int learnTarget = 0;       // 0 = off, 1 = harmonics, 2 = sub
     bool learnBlinkOn = false; // blink phase for the armed LED / LCD prompt
     const bool* autoShowValue = nullptr;
@@ -511,6 +524,12 @@ inline void paintRubberButton(cairo_t* cr, double x, double y, double w, double 
     setSilkFont(cr, 9.0);
     setColor(cr, enabled ? kSilk : kSilkDim);
     centeredText(cr, label, x + w / 2.0, y + h / 2.0);
+}
+
+inline void paintSwitch(cairo_t* cr, const SwitchButton& s, float value, bool hovered)
+{
+    paintRubberButton(cr, s.x, s.y, s.w, s.h, s.label, hovered, true);
+    paintLed(cr, s.x - 9.0, s.y + s.h / 2.0, std::fabs(value - s.value) < 0.5f);
 }
 
 inline void paintLearnButton(cairo_t* cr, const LearnButton& b, bool armed, bool blinkOn, bool hovered)
@@ -741,6 +760,9 @@ inline void paint(cairo_t* cr, const Layout& L, const PaintState& state)
     for (const PanelBox& p : L.panels)
         paintPanel(cr, p);
     paintScope(cr, L.scope, state.values);
+
+    for (size_t i = 0; i < L.switches.size(); ++i)
+        paintSwitch(cr, L.switches[i], state.values[L.switches[i].param], (int)i == state.hoverSwitch);
 
     for (size_t i = 0; i < L.learnButtons.size(); ++i)
     {

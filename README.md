@@ -6,7 +6,7 @@
 > conversational back-and-forth with an AI, not hand-engineered from a spec.
 > It works, it's been tested, but go in with appropriate expectations.
 
-A monophonic, guitar-like solo lead synth (VST3 / LV2 / CLAP / JACK
+A guitar-like solo lead synth (mono or 8-voice poly) (VST3 / LV2 / CLAP / JACK
 standalone), built on [DPF](https://github.com/DISTRHO/DPF) with a Cairo UI.
 The whole expression lives on the controllers:
 **velocity and aftertouch are deliberately ignored.**
@@ -23,7 +23,11 @@ The whole expression lives on the controllers:
 **With both controllers centred you get the plain tone** (fitted to the
 reference `base.wav`); a spring-loaded joystick is the intended controller.
 | Pitch bend | ±12 semitones by default (up to ±24) |
-| Keys | mono, last-note priority; legato doesn't re-attack, releasing a key falls back to the still-held one |
+| Keys | **MONO** (default): last-note priority, legato doesn't re-attack, releasing a key falls back to the still-held one, GLIDE applies. **POLY**: 8 voices (oldest note stolen), each with its own drive and cabinet, so single notes sound exactly as in mono and chords stay clean; GLIDE is mono-only |
+
+In POLY a single note sits ~6 dB under MONO so chords don't slam the
+output. Polyphony multiplies the CPU cost: 8 low notes take about a quarter
+of one core, with 7 unison VOICES about three quarters.
 
 Both CONTROL assignments have a **LEARN** button: click it, move the strip /
 wheel / knob you want, done (click again to cancel). Learning binds MIDI CCs,

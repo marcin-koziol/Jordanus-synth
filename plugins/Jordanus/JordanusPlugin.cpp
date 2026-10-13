@@ -1,20 +1,23 @@
 /*
- * Jordanus - monophonic "guitar-like" solo lead: flageolet harmonics
- * on the mod wheel / ribbon, a clean sub low end on a second controller, and
- * a wide pitch bend. Velocity and aftertouch are intentionally ignored - the
- * whole expression lives on the controllers. See dsp/LeadVoice.hpp for the
- * sound engine.
+ * Jordanus - "guitar-like" solo lead: flageolet harmonics on one strip /
+ * joystick axis, sub / octave on the other, and a wide pitch bend. Velocity
+ * and aftertouch are intentionally ignored - the whole expression lives on
+ * the controllers. See dsp/LeadVoice.hpp for the sound engine.
  *
- * Structure mirrors the other Sideous plugins (same initParameter/
- * getParameterValue/setParameterValue/run() shape), with the mono note
- * stack from Sideous' mono mode: releasing the current key falls back to
- * the previous still-held one, legato, without re-attacking.
+ * Voice Mode: MONO plays one LeadVoice through the note stack from Sideous'
+ * mono mode (releasing the current key falls back to the previous
+ * still-held one, legato, without re-attacking; Glide applies). POLY spreads
+ * notes over kPolyVoices voices (free -> releasing -> oldest), each a full
+ * LeadVoice with its own shaper and cabinet, so a single note sounds
+ * exactly as in mono and chords stay clean. The controllers and pitch bend
+ * always drive every voice.
  */
 
 #include "DistrhoPlugin.hpp"
 #include "Params.hpp"
 #include "dsp/LeadVoice.hpp"
 
+#include <array>
 #include <cmath>
 
 START_NAMESPACE_DISTRHO
@@ -24,6 +27,7 @@ using namespace jordanus;
 // -----------------------------------------------------------------------------------------------------------
 
 static constexpr const uint32_t kMaxHeldNotes = 16;
+static constexpr const uint32_t kPolyVoices = 8;
 
 class JordanusPlugin : public Plugin
 {
@@ -48,10 +52,10 @@ protected:
     const char* getLabel() const override { return "Jordanus"; }
     const char* getDescription() const override
     {
-        return "Monophonic guitar-like solo lead. The mod wheel / ribbon walks a ladder of "
-               "flageolet harmonics (LOW or HIGH set) that bloom in like guitar feedback, a "
-               "second controller blends in a clean sub -1/-2 octave low end, and a wide pitch "
-               "bend does the rest. Velocity and aftertouch are deliberately ignored.";
+        return "Guitar-like solo lead, mono (legato) or 8-voice poly. One strip / joystick axis "
+               "swells a flageolet in over the plain tone (a different harmonic up and down), the "
+               "other brings in a sub below or an octave above, and a wide pitch bend does the "
+               "rest. Velocity and aftertouch are deliberately ignored.";
     }
     const char* getMaker() const override { return "Jordanus"; }
     const char* getHomePage() const override { return DISTRHO_PLUGIN_URI; }
@@ -81,6 +85,18 @@ protected:
                 parameter.hints |= kParameterIsLogarithmic;
             if (info.shape == ParamShape::Integer)
                 parameter.hints |= kParameterIsInteger;
+        }
+
+        if (index == kParamVoiceMode)
+        {
+            parameter.enumValues.count = 2;
+            parameter.enumValues.restrictedMode = true;
+            ParameterEnumerationValue* const values = new ParameterEnumerationValue[2];
+            values[0].value = 0.0f;
+            values[0].label = "Mono";
+            values[1].value = 1.0f;
+            values[1].label = "Poly";
+            parameter.enumValues.values = values;
         }
 
         parameter.name = info.name;
@@ -121,6 +137,7 @@ protected:
         case kParamCab:       return fParams.cabHz;
         case kParamBendRange: return fBendRange;
         case kParamGlide:     return fParams.glide;
+        case kParamVoiceMode: return fPoly ? 1.0f : 0.0f;
         case kParamAttack:    return fParams.attack;
         case kParamDecay:     return fParams.decay;
         case kParamSustain:   return fParams.sustain;
@@ -159,7 +176,22 @@ protected:
         case kParamSpread:    fParams.spread = value; break;
         case kParamAsym:      fParams.asym = value; break;
         case kParamCab:       fParams.cabHz = value; break;
-        case kParamBendRange: fBendRange = value; fVoice.setPitchBend(fBendNormalized * fBendRange); return;
+        case kParamBendRange:
+            fBendRange = value;
+            for (jordanus::LeadVoice& v : fVoices)
+                v.setPitchBend(fBendNormalized * fBendRange);
+            return;
+        case kParamVoiceMode:
+        {
+            const bool poly = value >= 0.5f;
+            if (poly != fPoly)
+            {
+                // switching modes mid-note would strand voices / the note stack
+                allNotesOff();
+                fPoly = poly;
+            }
+            return;
+        }
         case kParamGlide:     fParams.glide = value; break;
         case kParamAttack:    fParams.attack = value; break;
         case kParamDecay:     fParams.decay = value; break;
@@ -174,7 +206,8 @@ protected:
         default:              return; // output meters: hosts must not write them
         }
 
-        fVoice.applyParams(fParams);
+        for (jordanus::LeadVoice& v : fVoices)
+            v.applyParams(fParams);
     }
 
     // ---------------------------------------------------------------------
@@ -187,8 +220,11 @@ protected:
 
     void sampleRateChanged(double newSampleRate) override
     {
-        fVoice.setSampleRate(newSampleRate);
-        fVoice.applyParams(fParams);
+        for (jordanus::LeadVoice& v : fVoices)
+        {
+            v.setSampleRate(newSampleRate);
+            v.applyParams(fParams);
+        }
     }
 
     void run(const float**, float** outputs, uint32_t frames,
@@ -204,8 +240,12 @@ protected:
             while (nextEvent < midiEventCount && midiEvents[nextEvent].frame == frame)
                 handleMidiEvent(midiEvents[nextEvent++]);
 
-            float out = fVoice.process() * fVolume * kHeadroom;
-            out = out < -1.0f ? -1.0f : (out > 1.0f ? 1.0f : out); // last-resort guard only
+            // idle voices only run their controller smoothing - cheap
+            float mix = 0.0f;
+            for (jordanus::LeadVoice& v : fVoices)
+                mix += v.process();
+
+            const float out = safetyClip(mix * fVolume * kHeadroom * (fPoly ? kPolyGain : 1.0f));
 
             outL[frame] = out;
             outR[frame] = out;
@@ -217,6 +257,19 @@ protected:
 
 private:
     static constexpr const float kHeadroom = 0.7f;
+    // poly: a single note ~6dB under mono, so a 4-note chord lands near a
+    // mono note's level instead of slamming the safety clip
+    static constexpr const float kPolyGain = 0.5f;
+
+    // last-resort guard: untouched below 0.8 (a mono note peaks ~0.72),
+    // soft above, never past 1
+    static float safetyClip(float x) noexcept
+    {
+        const float a = std::fabs(x);
+        if (a <= 0.8f)
+            return x;
+        return std::copysign(0.8f + 0.2f * std::tanh((a - 0.8f) / 0.2f), x);
+    }
 
     void handleMidiEvent(const MidiEvent& event) noexcept
     {
@@ -230,18 +283,25 @@ private:
         // velocity (data2 on note-on) is deliberately never read
         if (status == 0x90 && data2 > 0)
         {
-            noteOn(data1);
+            if (fPoly)
+                polyNoteOn(data1);
+            else
+                noteOn(data1);
         }
         else if (status == 0x80 || (status == 0x90 && data2 == 0))
         {
-            noteOff(data1);
+            if (fPoly)
+                polyNoteOff(data1);
+            else
+                noteOff(data1);
         }
         else if (status == 0xE0 && event.size >= 3) // pitch bend, 14-bit, center = 8192
         {
             const int raw = (int)data1 | ((int)data2 << 7);
             const float normalized = ((float)raw - 8192.0f) / 8192.0f;
             fBendNormalized = normalized < -1.0f ? -1.0f : (normalized > 1.0f ? 1.0f : normalized);
-            fVoice.setPitchBend(fBendNormalized * fBendRange);
+            for (jordanus::LeadVoice& v : fVoices)
+                v.setPitchBend(fBendNormalized * fBendRange);
         }
         else if (status == 0xB0 && event.size >= 3)
         {
@@ -258,19 +318,67 @@ private:
             if (data1 == fHarmCC)
             {
                 fHarmValue = (float)data2 / 127.0f;
-                fVoice.setHarmonics(fHarmValue);
+                for (jordanus::LeadVoice& v : fVoices)
+                    v.setHarmonics(fHarmValue);
             }
             if (data1 == fSubCC)
             {
                 fSubValue = (float)data2 / 127.0f;
-                fVoice.setSub(fSubValue);
+                for (jordanus::LeadVoice& v : fVoices)
+                    v.setSub(fSubValue);
             }
             if (data1 == 120 || data1 == 123) // all sound off / all notes off
-            {
-                fHeldCount = 0;
-                fVoice.kill();
-            }
+                allNotesOff();
         }
+    }
+
+    void allNotesOff() noexcept
+    {
+        fHeldCount = 0;
+        for (jordanus::LeadVoice& v : fVoices)
+            v.kill();
+    }
+
+    // ---------------------------------------------------------------------
+    // poly allocation: a voice already on this note re-attacks; else the
+    // first idle voice, else the oldest releasing one, else the oldest of all
+
+    void polyNoteOn(int note) noexcept
+    {
+        int target = -1;
+        for (uint32_t i = 0; i < kPolyVoices && target < 0; ++i)
+            if (fVoices[i].isActive() && fVoices[i].getNote() == note)
+                target = (int)i;
+        for (uint32_t i = 0; i < kPolyVoices && target < 0; ++i)
+            if (!fVoices[i].isActive())
+                target = (int)i;
+        if (target < 0)
+            target = oldestVoice(true);
+        if (target < 0)
+            target = oldestVoice(false);
+
+        fVoiceAge[target] = ++fAgeCounter;
+        fVoices[target].noteOn(note, true);
+    }
+
+    void polyNoteOff(int note) noexcept
+    {
+        for (jordanus::LeadVoice& v : fVoices)
+            if (v.isActive() && !v.isReleasing() && v.getNote() == note)
+                v.noteOff();
+    }
+
+    int oldestVoice(bool releasingOnly) const noexcept
+    {
+        int oldest = -1;
+        for (uint32_t i = 0; i < kPolyVoices; ++i)
+        {
+            if (releasingOnly && !fVoices[i].isReleasing())
+                continue;
+            if (oldest < 0 || fVoiceAge[i] < fVoiceAge[oldest])
+                oldest = (int)i;
+        }
+        return oldest;
     }
 
     // ---------------------------------------------------------------------
@@ -284,7 +392,7 @@ private:
         const bool retrigger = fHeldCount == 0;
         if (fHeldCount < kMaxHeldNotes)
             fHeld[fHeldCount++] = note;
-        fVoice.noteOn(note, retrigger);
+        fVoices[0].noteOn(note, retrigger);
     }
 
     void noteOff(int note) noexcept
@@ -295,9 +403,9 @@ private:
         if (!wasCurrent)
             return;
         if (fHeldCount > 0)
-            fVoice.noteOn(fHeld[fHeldCount - 1], false); // legato fall-back to the previous key
+            fVoices[0].noteOn(fHeld[fHeldCount - 1], false); // legato fall-back to the previous key
         else
-            fVoice.noteOff();
+            fVoices[0].noteOff();
     }
 
     void removeHeld(int note) noexcept
@@ -314,8 +422,11 @@ private:
         }
     }
 
-    jordanus::LeadVoice fVoice;
+    std::array<jordanus::LeadVoice, kPolyVoices> fVoices; // mono mode plays fVoices[0] only
     jordanus::LeadParams fParams;
+    bool fPoly = false;
+    uint32_t fVoiceAge[kPolyVoices] = {}; // note-on order, for stealing the oldest
+    uint32_t fAgeCounter = 0;
 
     int fHarmCC = 1;
     int fSubCC = 2;

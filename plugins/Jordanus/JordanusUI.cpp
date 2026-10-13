@@ -135,6 +135,7 @@ protected:
         state.hoverKnob = fHoverKnob;
         state.dragKnob = fDragKnob;
         state.hoverLearn = fHoverLearn;
+        state.hoverSwitch = fHoverSwitch;
         state.learnTarget = fLearnTarget;
         state.learnBlinkOn = learnBlinkOn();
         state.autoShowValue = autoShow;
@@ -207,6 +208,22 @@ protected:
                 return true;
             }
 
+            const int switchIdx = hitTestSwitch(mx, my);
+            if (switchIdx >= 0)
+            {
+                const ui::SwitchButton& s = fLayout.switches[(size_t)switchIdx];
+                if (fValues[s.param] != s.value)
+                {
+                    editParameter(s.param, true);
+                    setParameterValue(s.param, s.value);
+                    editParameter(s.param, false);
+                    fValues[s.param] = s.value;
+                    fDirty = true;
+                    repaint();
+                }
+                return true;
+            }
+
             const int knobIdx = hitTestKnob(mx, my);
             if (knobIdx < 0)
                 return false;
@@ -271,9 +288,11 @@ protected:
         const int newHoverKnob = hitTestKnob(mx, my);
         const int newHoverPresetButton = hitTestPresetButton(mx, my);
         const int newHoverLearn = hitTestLearn(mx, my);
+        const int newHoverSwitch = hitTestSwitch(mx, my);
         if (newHoverKnob != fHoverKnob || newHoverPresetButton != fHoverPresetButton ||
-            newHoverLearn != fHoverLearn)
+            newHoverLearn != fHoverLearn || newHoverSwitch != fHoverSwitch)
         {
+            fHoverSwitch = newHoverSwitch;
             fHoverLearn = newHoverLearn;
             fHoverKnob = newHoverKnob;
             fHoverPresetButton = newHoverPresetButton;
@@ -361,6 +380,17 @@ private:
             const double dx = x - k.cx, dy = y - k.cy;
             const double reach = k.radius + 6.0;
             if (dx * dx + dy * dy <= reach * reach)
+                return (int)i;
+        }
+        return -1;
+    }
+
+    int hitTestSwitch(double x, double y) const noexcept
+    {
+        for (size_t i = 0; i < fLayout.switches.size(); ++i)
+        {
+            const ui::SwitchButton& s = fLayout.switches[i];
+            if (x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h)
                 return (int)i;
         }
         return -1;
@@ -535,6 +565,7 @@ private:
 
     int fHoverKnob = -1;
     int fHoverLearn = -1;
+    int fHoverSwitch = -1;
 
     int fLearnTarget = 0;      // 0 = off, 1 = harmonics, 2 = sub - mirrors what we sent as kParamLearn
     bool fLastBlinkOn = false;

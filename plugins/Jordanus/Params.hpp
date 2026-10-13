@@ -41,6 +41,7 @@ enum Params : uint32_t {
 
     kParamBendRange,
     kParamGlide,
+    kParamVoiceMode,
 
     kParamAttack,
     kParamDecay,
@@ -117,6 +118,7 @@ inline const ParamInfo& getParamInfo(uint32_t index) noexcept
 
         { "Bend Range",     "bend_range",  "st", 1.0f,    24.0f,   12.0f,  ParamShape::Integer },
         { "Glide",          "glide",       "s",  0.0f,    1.0f,    0.0f,   ParamShape::Linear },
+        { "Voice Mode",     "voice_mode",  "",   0.0f,    1.0f,    0.0f,   ParamShape::Integer }, // 0 = mono (legato), 1 = 8-voice poly
 
         { "Attack",         "attack",      "s",  0.001f,  1.0f,    0.004f, ParamShape::Logarithmic },
         { "Decay",          "decay",       "s",  0.005f,  5.0f,    0.25f,  ParamShape::Logarithmic },

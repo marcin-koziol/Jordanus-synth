@@ -284,6 +284,7 @@ public:
     }
 
     bool isActive() const noexcept { return !fEnv.isIdle(); }
+    bool isReleasing() const noexcept { return fEnv.getStage() == ADSR::Stage::Release; }
     int getNote() const noexcept { return fNote; }
 
     void setPitchBend(float semitones) noexcept { fBendTarget = semitones; }
@@ -298,6 +299,11 @@ public:
         fHarm += (fHarmTarget - fHarm) * fHarmCoeff;
         fSub += (fSubTarget - fSub) * fSubCoeff;
         fCurrentNote += (fTargetNote - fCurrentNote) * fGlideCoeff;
+        // the flageolet's Bloom slew too - otherwise a voice that sat idle
+        // (every new note in poly mode) swells in from a stale position.
+        // Signed, so a flip from one side to the other passes back through
+        // the plain tone instead of jumping.
+        fHarmSlewed += (bipolar(fHarm) - fHarmSlewed) * fBloomCoeff;
 
         if (fEnv.isIdle())
             return 0.0f;
@@ -501,9 +507,6 @@ private:
 
     void updateHarmonicGains() noexcept
     {
-        // the signed position is slewed (Bloom), so a flip from one side to
-        // the other passes back through the plain tone instead of jumping
-        fHarmSlewed += (bipolar(fHarm) - fHarmSlewed) * fBloomCoeff;
         const float amount = std::fabs(fHarmSlewed);
         const int flageolet = std::clamp(fHarmSlewed >= 0.0f ? fParams.upHarmonic : fParams.downHarmonic, 2, kMaxHarmonic);
 
