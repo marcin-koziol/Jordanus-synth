@@ -1,0 +1,16 @@
+# build output
+build/
+build-*/
+
+# editor/IDE cruft
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# reference recordings used for the sound analysis - kept out of the repo
+/*.wav
