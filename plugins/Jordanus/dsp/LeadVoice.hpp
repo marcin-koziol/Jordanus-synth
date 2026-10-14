@@ -375,7 +375,13 @@ public:
                 if (j <= quarterLimit)
                     wave2 += fSubCoef[j] * fSinQuarter[j];
             }
-            partials += fParams.subLevel * kSubScale * (sub1 * wave1 + sub2 * wave2) + baseSub * wave1;
+            // The controller sub is calibrated to sit UNDER the base (~-18dB,
+            // as in the references). When BASE UNDER SUB lets the base fall
+            // away as the controller goes down, the sub takes over its level
+            // instead - otherwise (base under sub = 0) a full-down SUB leaves
+            // only a quiet low sine and the note all but vanishes.
+            const float subScale = kSubScale + (1.0f - kSubScale) * (1.0f - fParams.baseUnderSub);
+            partials += fParams.subLevel * subScale * (sub1 * wave1 + sub2 * wave2) + baseSub * wave1;
         }
 
         // --- shaper, DC block, cabinet ---
