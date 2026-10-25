@@ -157,6 +157,8 @@ protected:
         case kParamSustain:   return fParams.sustain;
         case kParamRelease:   return fParams.release;
         case kParamVolume:    return fVolume;
+        case kParamHarmonics: return fHarmParam;
+        case kParamSubOctave: return fSubParam;
         case kParamLearn:     return (float)fLearnTarget;
         case kParamHarmView:  return fHarmValue;
         case kParamSubView:   return fSubValue;
@@ -214,6 +216,8 @@ protected:
         case kParamSustain:   fParams.sustain = value; break;
         case kParamRelease:   fParams.release = value; break;
         case kParamVolume:    fVolume = value; return;
+        case kParamHarmonics: fHarmParam = value; setHarmonics(value); return;
+        case kParamSubOctave: fSubParam = value; setSub(value); return;
         case kParamLearn:
             fLearnTarget = (int)(value + 0.5f);
             if (fLearnTarget != 0)
@@ -332,20 +336,28 @@ private:
 
             // checked independently, so both gestures can share one CC if wanted
             if (data1 == fHarmCC)
-            {
-                fHarmValue = (float)data2 / 127.0f;
-                for (jordanus::LeadVoice& v : fVoices)
-                    v.setHarmonics(fHarmValue);
-            }
+                setHarmonics((float)data2 / 127.0f);
             if (data1 == fSubCC)
-            {
-                fSubValue = (float)data2 / 127.0f;
-                for (jordanus::LeadVoice& v : fVoices)
-                    v.setSub(fSubValue);
-            }
+                setSub((float)data2 / 127.0f);
             if (data1 == 120 || data1 == 123) // all sound off / all notes off
                 allNotesOff();
         }
+    }
+
+    // the gestures, from either their CC or their automatable parameter -
+    // whichever moved last is what plays
+    void setHarmonics(float value) noexcept
+    {
+        fHarmValue = value;
+        for (jordanus::LeadVoice& v : fVoices)
+            v.setHarmonics(value);
+    }
+
+    void setSub(float value) noexcept
+    {
+        fSubValue = value;
+        for (jordanus::LeadVoice& v : fVoices)
+            v.setSub(value);
     }
 
     void allNotesOff() noexcept
@@ -453,7 +465,9 @@ private:
     float fWave = 0.1f; // the knob value; LeadParams holds what it maps to (body + shape)
 
     float fBendNormalized = 0.0f;
-    float fHarmValue = 0.5f; // last received controller values, echoed to the UI meters
+    float fHarmParam = 0.5f; // the automatable gesture parameters (kParamHarmonics / kParamSubOctave)
+    float fSubParam = 0.5f;
+    float fHarmValue = 0.5f; // what's actually playing (CC or parameter, last wins), echoed to the UI meters
     float fSubValue = 0.5f; // bipolar controller, centre = nothing
 
     int fHeld[kMaxHeldNotes] = {};

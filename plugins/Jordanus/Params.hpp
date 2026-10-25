@@ -51,6 +51,13 @@ enum Params : uint32_t {
     kParamRelease,
     kParamVolume,
 
+    // the two performance gestures as automatable parameters (0..1, centre
+    // 0.5 = plain tone): the same controls the HARM / SUB CCs drive, last
+    // one to move wins. Live state like the CCs, so not part of presets.
+    // Appended after the existing params so saved projects keep their IDs.
+    kParamHarmonics,
+    kParamSubOctave,
+
     // MIDI learn handshake with the UI, never automated, never in a preset:
     // the UI arms kParamLearn (0 = off, 1 = harmonics, 2 = sub); the DSP
     // binds the next incoming CC itself, disarms, and reports the CC number
@@ -72,10 +79,17 @@ inline constexpr bool isOutputParam(uint32_t index) noexcept
     return index == kParamHarmView || index == kParamSubView || index == kParamLearnedCC;
 }
 
-// params that belong in a preset: everything except the learn handshake and outputs
+// the gestures (HARM / SUB): automatable, but live state rather than a setting
+inline constexpr bool isPerformanceParam(uint32_t index) noexcept
+{
+    return index == kParamHarmonics || index == kParamSubOctave;
+}
+
+// params that belong in a preset: everything except the learn handshake,
+// the live gestures and outputs
 inline constexpr bool isPresetParam(uint32_t index) noexcept
 {
-    return index != kParamLearn && !isOutputParam(index);
+    return index != kParamLearn && !isPerformanceParam(index) && !isOutputParam(index);
 }
 
 enum class ParamShape { Linear, Logarithmic, Integer };
@@ -127,6 +141,9 @@ inline const ParamInfo& getParamInfo(uint32_t index) noexcept
         { "Sustain",        "sustain",     "",   0.0f,    1.0f,    0.7f,   ParamShape::Linear },
         { "Release",        "release",     "s",  0.01f,   2.0f,    0.18f,  ParamShape::Logarithmic },
         { "Volume",         "volume",      "",   0.0f,    1.0f,    0.8f,   ParamShape::Linear },
+
+        { "Harmonics",      "harmonics",   "",   0.0f,    1.0f,    0.5f,   ParamShape::Linear }, // bipolar, 0.5 = plain tone
+        { "Sub / Octave",   "sub_octave",  "",   0.0f,    1.0f,    0.5f,   ParamShape::Linear }, // bipolar, 0.5 = plain tone
 
         { "MIDI Learn",     "midi_learn",  "",   0.0f,    2.0f,    0.0f,   ParamShape::Integer },
 

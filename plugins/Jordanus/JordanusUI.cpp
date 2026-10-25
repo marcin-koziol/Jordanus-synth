@@ -83,9 +83,9 @@ protected:
         if (index == kParamLearn)
             return;
 
-        // live controller meters for the LCD: no value popup, not part of
-        // any preset, so they must never mark a preset dirty
-        if (isOutputParam(index))
+        // live controller meters for the LCD and the automatable gestures: no
+        // value popup, not part of any preset, so they never mark one dirty
+        if (isOutputParam(index) || isPerformanceParam(index))
         {
             if (value != fValues[index])
             {
