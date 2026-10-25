@@ -75,7 +75,7 @@ struct Button { float x, y, w, h; const char* label; };
 
 struct PresetBarLayout
 {
-    Button prev, next, save, del;
+    Button prev, next, save, del, scale; // scale = UI scale (UiScale.hpp), label set at paint time
     float nameX, nameY, nameW, nameH; // the LCD's preset-name line (click to rename)
 };
 
@@ -130,7 +130,11 @@ inline Layout buildLayout(float width)
         pb.save = { width - margin - btnW, lcdY, btnW, btnH, "WRITE" };
         pb.del  = { width - margin - btnW, lcdY + btnH + 6.0f, btnW, btnH, "DELETE" };
 
-        L.lcd = { margin + btnW + 10.0f, lcdY, width - 2.0f * (margin + btnW + 10.0f), lcdH };
+        // UI-scale button: its own full-height column left of WRITE / DELETE
+        const float scaleW = 66.0f;
+        pb.scale = { pb.save.x - 8.0f - scaleW, lcdY, scaleW, lcdH, "" };
+
+        L.lcd = { margin + btnW + 10.0f, lcdY, pb.scale.x - 10.0f - (margin + btnW + 10.0f), lcdH };
         pb.nameX = L.lcd.x + 8.0f;
         pb.nameY = L.lcd.y + 6.0f;
         pb.nameW = L.lcd.w - 16.0f;
@@ -395,7 +399,8 @@ struct PaintState
     bool presetIsUnsaved = false;
     bool presetEditingName = false;
     const char* presetEditBuffer = "";
-    int hoverPresetButton = -1;       // 0=prev,1=next,2=save,3=delete, or -1
+    int hoverPresetButton = -1;       // 0=prev,1=next,2=save,3=delete,4=UI scale, or -1
+    const char* scaleLabel = "";      // UI-scale button text (UiScale.hpp formatLabel)
     bool presetDeleteEnabled = false; // false while on INIT - nothing to delete
 };
 
@@ -756,6 +761,7 @@ inline void paint(cairo_t* cr, const Layout& L, const PaintState& state)
     paintRubberButton(cr, pb.save.x, pb.save.y, pb.save.w, pb.save.h, pb.save.label, state.hoverPresetButton == 2, true);
     paintRubberButton(cr, pb.del.x,  pb.del.y,  pb.del.w,  pb.del.h,  pb.del.label,  state.hoverPresetButton == 3,
                       state.presetDeleteEnabled);
+    paintRubberButton(cr, pb.scale.x, pb.scale.y, pb.scale.w, pb.scale.h, state.scaleLabel, state.hoverPresetButton == 4, true);
 
     for (const PanelBox& p : L.panels)
         paintPanel(cr, p);
