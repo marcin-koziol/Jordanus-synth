@@ -54,10 +54,20 @@ public:
 protected:
     // ---------------------------------------------------------------------
 
+    // the UI works in real units (Hz, s, ...); the host speaks positions for
+    // log-curved parameters (paramToHost() in Params.hpp) - this hides
+    // UI::setParameterValue so every call in this class converts
+    void setParameterValue(uint32_t index, float value)
+    {
+        UI::setParameterValue(index, paramToHost(index, value));
+    }
+
     void parameterChanged(uint32_t index, float value) override
     {
         if (index >= kParamCount)
             return;
+
+        value = paramFromHost(index, value);
 
         // MIDI learn result: the DSP already bound the CC; store it in the
         // real CC param too, so the host's state and presets carry it

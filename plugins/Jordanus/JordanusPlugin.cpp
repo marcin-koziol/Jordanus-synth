@@ -42,7 +42,7 @@ public:
         // can't drift apart
         for (uint32_t i = 0; i < kParamCount; ++i)
             if (!isOutputParam(i))
-                setParameterValue(i, getParamInfo(i).def);
+                setParameterValue(i, paramToHost(i, getParamInfo(i).def));
     }
 
 protected:
@@ -81,8 +81,6 @@ protected:
         else
         {
             parameter.hints = kParameterIsAutomatable;
-            if (info.shape == ParamShape::Logarithmic)
-                parameter.hints |= kParameterIsLogarithmic;
             if (info.shape == ParamShape::Integer)
                 parameter.hints |= kParameterIsInteger;
         }
@@ -105,12 +103,28 @@ protected:
         parameter.ranges.min = info.min;
         parameter.ranges.max = info.max;
         parameter.ranges.def = info.def;
+
+        // log-curved parameters reach the host as a 0..100 % position (see
+        // paramToHost() in Params.hpp), so its automation sweeps them evenly
+        if (isHostPosition(index))
+        {
+            parameter.unit = "%";
+            parameter.ranges.min = 0.0f;
+            parameter.ranges.max = 100.0f;
+            parameter.ranges.def = paramToHost(index, info.def);
+        }
     }
 
     // ---------------------------------------------------------------------
     // Internal data
 
     float getParameterValue(uint32_t index) const override
+    {
+        return paramToHost(index, getEngineeringValue(index));
+    }
+
+    // a parameter in real units (Hz, s, ...), as the DSP sees it
+    float getEngineeringValue(uint32_t index) const
     {
         switch (index)
         {
@@ -153,6 +167,8 @@ protected:
 
     void setParameterValue(uint32_t index, float value) override
     {
+        value = paramFromHost(index, value); // host position -> real units (Params.hpp)
+
         switch (index)
         {
         case kParamBloom:     fParams.bloom = value; break;
